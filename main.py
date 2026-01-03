@@ -1,0 +1,92 @@
+import cv2
+import numpy as np
+
+# Local imports
+import config
+from detectors.board import detect_board
+from detectors.cards import detect_cards, classify_card
+from utils import extract_rotated_card
+
+
+def main():
+    # Setup
+    cap = cv2.VideoCapture('data/easy2_mid.mp4')
+
+    # Load Reference Board
+    board_img = cv2.imread('data/board_reference.jpg', 0)
+    if board_img is None:
+        raise ValueError("error with board reference img")
+
+    BOARD_W, BOARD_H = board_img.shape[:2]
+
+    cv2.namedWindow("Tracking", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Tracking", 900, 600)
+    cv2.namedWindow("Contours", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Contours", 900, 600)
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cv2.createTrackbar("Seek", "Tracking", 0, total_frames,
+                       lambda x: cap.set(cv2.CAP_PROP_POS_FRAMES, x))
+
+    board_corners = None
+    frame_idx = 0
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            overlay = frame.copy()
+            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # board detection, every 30 frames
+            if frame_idx % 30 == 0:
+                found_corners = detect_board(
+                    frame_gray, board_img, config.ORB, config.BF)
+                if found_corners is not None:
+                    board_corners = found_corners
+
+            # drawing the board outline
+            if board_corners is not None:
+                pts = board_corners.astype(int)
+                cv2.polylines(overlay, [pts], isClosed=True,
+                              color=(0, 0, 255), thickness=3)
+
+                # masking the board to make the card contour detection easier
+                mask = np.ones(frame_gray.shape, dtype=np.uint8) * 255
+                cv2.fillPoly(mask, [board_corners.astype(int)], 0)
+                masked_frame_gray = cv2.bitwise_and(
+                    frame_gray, frame_gray, mask=mask)
+            else:
+                masked_frame_gray = frame_gray
+
+            # card detection
+            detected_rects = detect_cards(masked_frame_gray, debug=True)
+
+            # drawing the card outlines
+            for rect in detected_rects:
+                box = cv2.boxPoints(rect)
+                box = np.int64(box)
+                cv2.drawContours(overlay, [box], 0, (0, 255, 0), 2)
+
+                # classifying the cards
+                # card_img = extract_rotated_card(box.astype("float32"), frame)
+                # color_label = classify_card(card_img)
+                # cv2.putText(overlay, color_label, (box[0][0], box[0][1]), ...
+
+            frame_idx = (frame_idx + 1) % 1000
+            cv2.imshow("Tracking", overlay)
+
+            if cv2.waitKey(25) & 0xFF == 27:  # ESC to exit
+                break
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
