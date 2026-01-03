@@ -27,8 +27,10 @@ def detect_cards(frame_gray, debug=False):
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if 5000 < area < 100000:
-            rect = cv2.minAreaRect(cnt)
-            cards.append(rect)
+            # rect = cv2.minAreaRect(cnt)
+            # cards.append(rect)
+            x, y, w, h = cv2.boundingRect(cnt)
+            cards.append((x, y, w, h))
 
     return cards
 

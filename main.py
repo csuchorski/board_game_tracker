@@ -5,11 +5,13 @@ import numpy as np
 import config
 from detectors.board import detect_board
 from detectors.cards import detect_cards, classify_card
+from trackers.tracker_manager import TrackerManager
 from utils import extract_rotated_card
 
 
 def main():
-    # Setup
+    SCALE = 0.75
+
     cap = cv2.VideoCapture('data/easy2_mid.mp4')
 
     # Load Reference Board
@@ -29,6 +31,7 @@ def main():
                        lambda x: cap.set(cv2.CAP_PROP_POS_FRAMES, x))
 
     board_corners = None
+    tracker_manager = TrackerManager(max_disappeared=10)
     frame_idx = 0
 
     try:
@@ -36,12 +39,12 @@ def main():
             ret, frame = cap.read()
             if not ret:
                 break
-
+            frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
             overlay = frame.copy()
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # board detection, every 30 frames
-            if frame_idx % 30 == 0:
+            if frame_idx % 1000 == 0:
                 found_corners = detect_board(
                     frame_gray, board_img, config.ORB, config.BF)
                 if found_corners is not None:
@@ -62,20 +65,42 @@ def main():
                 masked_frame_gray = frame_gray
 
             # card detection
-            detected_rects = detect_cards(masked_frame_gray, debug=True)
+            detected_rects = None
+            if frame_idx % 300 == 0:
+                detected_rects = detect_cards(masked_frame_gray, debug=True)
+            tracked_objects = tracker_manager.update(frame, detected_rects)
 
             # drawing the card outlines
-            for rect in detected_rects:
-                box = cv2.boxPoints(rect)
-                box = np.int64(box)
-                cv2.drawContours(overlay, [box], 0, (0, 255, 0), 2)
+            # for rect in detected_rects:
+            # box = cv2.boxPoints(rect)
+            # box = np.int64(rect)
+            # cv2.drawContours(overlay, [box], 0, (0, 255, 0), 2)
+            if detected_rects is not None:
+                for box in detected_rects:
+                    p1 = (int(box[0]), int(box[1]))
+                    p2 = (int(box[0] + box[2]), int(box[1] + box[3]))
 
-                # classifying the cards
-                # card_img = extract_rotated_card(box.astype("float32"), frame)
-                # color_label = classify_card(card_img)
-                # cv2.putText(overlay, color_label, (box[0][0], box[0][1]), ...
+                    # Draw box
+                    cv2.rectangle(overlay, p1, p2, (0, 0, 255), 2)
+            for obj_id, box in tracked_objects.items():
+                p1 = (int(box[0]), int(box[1]))
+                p2 = (int(box[0] + box[2]), int(box[1] + box[3]))
 
-            frame_idx = (frame_idx + 1) % 1000
+                # Draw box
+                cv2.rectangle(overlay, p1, p2, (0, 255, 0), 2)
+
+                # Draw ID
+                cv2.putText(overlay, f"ID: {obj_id}", (p1[0], p1[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # classifying the cards
+            # card_img = extract_rotated_card(box.astype("float32"), frame)
+            # color_label = classify_card(card_img)
+            # cv2.putText(overlay, color_label, (box[0][0], box[0][1]), ...
+
+            frame_idx += 1
+            cv2.putText(overlay, f"Frame: {frame_idx}", (10, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
             cv2.imshow("Tracking", overlay)
 
             if cv2.waitKey(25) & 0xFF == 27:  # ESC to exit
