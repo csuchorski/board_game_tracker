@@ -4,6 +4,7 @@ import numpy as np
 import config
 from detectors.board import detect_board
 from detectors.cards import detect_cards, classify_card
+from detectors.hand import get_hand_mask
 from trackers.tracker_manager import TrackerManager
 from utils import extract_rotated_card
 
@@ -11,8 +12,8 @@ from utils import extract_rotated_card
 def main():
     SCALE = 0.75
 
-    cap = cv2.VideoCapture('data/easy2_mid.mp4')
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
+    cap = cv2.VideoCapture('data/easy1_start.mp4')
+    # cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
 
     board_img = cv2.imread('data/board_reference.jpg', 0)
     if board_img is None:
@@ -42,6 +43,16 @@ def main():
             overlay = frame.copy()
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+            # adding a semi-transparent tint to the detected hand
+            hand_mask = get_hand_mask(frame)
+            red_layer = np.zeros_like(overlay)
+            red_layer[:, :, 2] = hand_mask
+            overlay = cv2.addWeighted(overlay, 1.0, red_layer, 0.5, 0)
+
+            # hand_mask = cv2.bitwise_not(hand_mask)
+            # masked_frame_gray = cv2.bitwise_and(
+            #     frame_gray, frame_gray, mask=hand_mask)
+
             # board detection, every 30 frames
             if frame_idx % 100 == 0:
                 found_corners = detect_board(
@@ -56,17 +67,16 @@ def main():
                               color=(0, 0, 255), thickness=3)
 
                 # masking the board to make the card contour detection easier
-                mask = np.ones(frame_gray.shape, dtype=np.uint8) * 255
-                cv2.fillPoly(mask, [board_corners.astype(int)], 0)
-                masked_frame_gray = cv2.bitwise_and(
-                    frame_gray, frame_gray, mask=mask)
-            else:
-                masked_frame_gray = frame_gray
+                # mask = np.ones(frame_gray.shape, dtype=np.uint8) * 255
+                # cv2.fillPoly(mask, [board_corners.astype(int)], 0)
+                # masked_frame_gray = cv2.bitwise_and(
+                #     masked_frame_gray, frame_gray, mask=mask)
 
-            # card detection
+                # card detection
             detected_rects = None
-            if frame_idx % 15 == 0:
-                detected_rects = detect_cards(masked_frame_gray, debug=True)
+            if frame_idx % 7 == 0:
+                detected_rects = detect_cards(
+                    frame_gray, hand_mask=hand_mask, debug=True)
             tracked_objects = tracker_manager.update(frame, detected_rects)
 
             # drawing the card outlines

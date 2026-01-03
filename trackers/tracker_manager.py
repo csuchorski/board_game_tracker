@@ -3,7 +3,7 @@ import numpy as np
 
 
 class TrackerManager:
-    def __init__(self, max_disappeared=10):
+    def __init__(self, max_disappeared=5):
         # Dictionary to store trackers: { object_id: tracker_instance }
         self.trackers = {}
         # Dictionary to store lost frames count: { object_id: count }

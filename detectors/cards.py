@@ -3,7 +3,7 @@ import numpy as np
 from skimage.exposure import rescale_intensity
 
 
-def detect_cards(frame_gray, debug=False):
+def detect_cards(frame_gray, hand_mask=None, debug=False):
     frame_gray = np.uint8(rescale_intensity(frame_gray, out_range=(0, 255)))
 
     frame_blurred = cv2.medianBlur(frame_gray, 5)
@@ -18,20 +18,36 @@ def detect_cards(frame_gray, debug=False):
     contours, _ = cv2.findContours(
         frame_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    if debug:
-        test_view = cv2.cvtColor(frame_gray, cv2.COLOR_GRAY2BGR)
-        cv2.drawContours(test_view, contours, -1, (0, 0, 255), 3)
-        cv2.imshow("Contours", test_view)
-
+    hand_discarded = []
     cards = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if 5000 < area < 100000:
-            # rect = cv2.minAreaRect(cnt)
-            # cards.append(rect)
-            x, y, w, h = cv2.boundingRect(cnt)
-            cards.append((x, y, w, h))
+        if area < 5000 or area > 100000:
+            continue
 
+        x, y, w, h = cv2.boundingRect(cnt)
+        if hand_mask is not None:
+            hand_roi = hand_mask[y:y+h, x:x+w]
+
+            hand_pixels = cv2.countNonZero(hand_roi)
+
+            rect_area = w * h
+            overlap_ratio = hand_pixels / rect_area
+
+            # filter if a significant part of the detected rect overlaps with the hand_mask
+            if overlap_ratio > 0.3:
+                print(
+                    f"Ignored contour with {overlap_ratio:.2f} hand overlap")
+                hand_discarded.append(cnt)
+                continue
+        # rect = cv2.minAreaRect(cnt)
+        # cards.append(rect)
+        cards.append((x, y, w, h))
+    if debug:
+        test_view = cv2.cvtColor(frame_gray, cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(test_view, contours, -1, (0, 0, 255), 3)
+        cv2.drawContours(test_view, hand_discarded, -1, (255, 0, 255), 3)
+        cv2.imshow("Contours", test_view)
     return cards
 
 
