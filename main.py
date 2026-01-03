@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 
-# Local imports
 import config
 from detectors.board import detect_board
 from detectors.cards import detect_cards, classify_card
@@ -13,8 +12,8 @@ def main():
     SCALE = 0.75
 
     cap = cv2.VideoCapture('data/easy2_mid.mp4')
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
 
-    # Load Reference Board
     board_img = cv2.imread('data/board_reference.jpg', 0)
     if board_img is None:
         raise ValueError("error with board reference img")
@@ -44,7 +43,7 @@ def main():
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # board detection, every 30 frames
-            if frame_idx % 1000 == 0:
+            if frame_idx % 100 == 0:
                 found_corners = detect_board(
                     frame_gray, board_img, config.ORB, config.BF)
                 if found_corners is not None:
@@ -66,7 +65,7 @@ def main():
 
             # card detection
             detected_rects = None
-            if frame_idx % 300 == 0:
+            if frame_idx % 15 == 0:
                 detected_rects = detect_cards(masked_frame_gray, debug=True)
             tracked_objects = tracker_manager.update(frame, detected_rects)
 
@@ -80,16 +79,13 @@ def main():
                     p1 = (int(box[0]), int(box[1]))
                     p2 = (int(box[0] + box[2]), int(box[1] + box[3]))
 
-                    # Draw box
                     cv2.rectangle(overlay, p1, p2, (0, 0, 255), 2)
             for obj_id, box in tracked_objects.items():
                 p1 = (int(box[0]), int(box[1]))
                 p2 = (int(box[0] + box[2]), int(box[1] + box[3]))
 
-                # Draw box
                 cv2.rectangle(overlay, p1, p2, (0, 255, 0), 2)
 
-                # Draw ID
                 cv2.putText(overlay, f"ID: {obj_id}", (p1[0], p1[1] - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
