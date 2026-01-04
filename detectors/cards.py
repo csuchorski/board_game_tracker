@@ -10,7 +10,7 @@ def detect_cards(frame, hand_mask=None, debug=False):
     frame_blurred = cv2.medianBlur(frame_gray, 5)
     # frame_blurred = cv2.GaussianBlur(frame_gray, (5, 5), 0)
     frame_thresh = cv2.adaptiveThreshold(
-        frame_gray, 255,
+        frame_blurred, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY_INV,
         31, 20)
@@ -22,21 +22,20 @@ def detect_cards(frame, hand_mask=None, debug=False):
 
     hand_discarded = []
     cards = []
-    print('___')
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if area < 5000 or area > 50000:
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
-        if w*h > 25000:
+        rect_area = w * h
+        if rect_area > 25000:
             continue
         if hand_mask is not None:
             hand_roi = hand_mask[y:y+h, x:x+w]
 
             hand_pixels = cv2.countNonZero(hand_roi)
 
-            rect_area = w * h
             overlap_ratio = hand_pixels / rect_area
 
             # filter if a significant part of the detected rect overlaps with the hand_mask
@@ -50,10 +49,10 @@ def detect_cards(frame, hand_mask=None, debug=False):
         # cards.append(rect)
         cards.append((x, y, w, h))
     if debug:
-        test_view = frame_closed.copy()  # cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        test_view = cv2.cvtColor(frame_closed, cv2.COLOR_GRAY2BGR)
         cv2.drawContours(test_view, contours, -1, (0, 0, 255), 3)
-        # cv2.drawContours(test_view, hand_discarded, -1, (255, 0, 255), 3)
-        cv2.imshow("Contours", frame_closed)
+        cv2.drawContours(test_view, hand_discarded, -1, (255, 0, 255), 3)
+        cv2.imshow("Contours", test_view)
     return cards
 
 
