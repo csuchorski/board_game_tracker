@@ -1,40 +1,58 @@
 import cv2
 import numpy as np
+from skimage.exposure import equalize_adapthist
+
 
 import config
 from detectors.board import detect_board
 from detectors.cards import detect_cards, classify_card
 from detectors.hand import get_hand_mask
 from trackers.tracker_manager import TrackerManager
-from utils import extract_rotated_card, get_aligned_frame
+from utils import extract_rotated_card, get_aligned_frame, opencv_autoexposure
+
+
+def nothing(x):
+    pass
 
 
 def main(save_video=False, save_path=''):
-    SCALE = 0.75
+    SCALE = 1.0
 
     cap = cv2.VideoCapture(
-        'data/cropped_blue4.mp4')
-    # cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
+        'data/test_blue5.mp4')
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 200)
 
     board_img = cv2.imread('data/ref2.png', 0)
     if board_img is None:
         raise ValueError("error with board reference img")
-
     BOARD_W, BOARD_H = board_img.shape[:2]
 
     cv2.namedWindow("Tracking", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Tracking", 900, 600)
     cv2.namedWindow("Aligned view", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Aligned view", 900, 600)
-    cv2.namedWindow("Contours", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Contours", 900, 600)
+    cv2.resizeWindow("Aligned view", 600, 900)
+    cv2.namedWindow("Aligned view2", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Aligned view2", 600, 900)
+    cv2.namedWindow("Controls", cv2.WINDOW_NORMAL)
+    cv2.createTrackbar("H_min", "Controls", 0, 179, nothing)
+    cv2.createTrackbar("H_max", "Controls", 50, 179, nothing)
+    cv2.createTrackbar("S_min", "Controls", 30, 255, nothing)
+    cv2.createTrackbar("S_max", "Controls", 150, 255, nothing)
+    cv2.createTrackbar("V_min", "Controls", 60, 255, nothing)
+    cv2.createTrackbar("V_max", "Controls", 255, 255, nothing)
+    # cv2.namedWindow("Contours", cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow("Contours", 900, 600)
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cv2.createTrackbar("Seek", "Tracking", 0, total_frames,
                        lambda x: cap.set(cv2.CAP_PROP_POS_FRAMES, x))
 
     board_corners = None
-    tracker_manager = TrackerManager(max_disappeared=10)
+    tracker_manager = TrackerManager(max_disappeared=30)
+    backSub = cv2.createBackgroundSubtractorMOG2(
+        history=10, detectShadows=False)
+    mog_mask = None
+
     frame_idx = 0
 
     writer = None
@@ -64,40 +82,69 @@ def main(save_video=False, save_path=''):
 
             # board detection, every 100 frames
             if frame_idx % 100 == 0:
-                found_corners = detect_board(
+
+                found_corners, H_board = detect_board(
                     frame_gray, board_img, config.ORB, config.BF)
                 if found_corners is not None:
                     board_corners = found_corners
+                    H = H_board
+                    backSub = cv2.createBackgroundSubtractorMOG2(
+                        history=100, detectShadows=False)
+                    # backsub = cv2.bgsegm.createBackgroundSubtractorGMG()
 
             detected_rects = None
 
             if board_corners is not None:
                 # Draw board
+
                 pts = board_corners.astype(int)
                 cv2.polylines(overlay, [pts], isClosed=True,
                               color=(0, 0, 255), thickness=3)
 
+                board_view = cv2.warpPerspective(
+                    frame, np.linalg.inv(H), (BOARD_H, BOARD_W))
+                mog_mask = backSub.apply(board_view, mog_mask, 0.005)
+                board_view_gray = cv2.cvtColor(
+                    board_view, cv2.COLOR_BGR2GRAY)
+                # board_ref_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
+                diff = cv2.absdiff(board_img, board_view_gray)
+                # _, mask = cv2.threshold(
+                #     diff, 90, 255, cv2.THRESH_BINARY)  # 30 can be tuned
+                mask = cv2.adaptiveThreshold(diff, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                             cv2.THRESH_BINARY, 11, 2)
+
+                # mask = cv2.medianBlur(mask, 5)
+                mask = cv2.GaussianBlur(mog_mask, (5, 5), 0)
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+
+                mask = cv2.morphologyEx(
+                    mask, cv2.MORPH_OPEN, kernel)
+
+                mask = cv2.morphologyEx(
+                    mask, cv2.MORPH_CLOSE, kernel)  # close gaps
+
+                # table_view = get_aligned_frame(frame, H)
+
+                # card roi stuff
                 flat_pts = pts.reshape(-1, 2)
-                min_y = np.min(flat_pts[:, 1])
+                min_x = np.min(flat_pts[:, 0])
 
-                crop_h = int(max(0, min_y))
-                crop_h = min(crop_h, frame.shape[0])  # clamp to frame height
+                crop_w = int(max(0, min_x))
+                crop_w = min(crop_w, frame.shape[1])  # clamp to frame width
 
-                top_view = frame[0:crop_h, :]
+                card_ROI = frame[:, 0:crop_w]
 
-                if top_view.size > 0:
-                    cv2.imshow("Aligned view", top_view)
+                if card_ROI.size > 0:
 
                     # detect cards in the top_view
                     if frame_idx % 7 == 0:
-                        top_view_gray = cv2.cvtColor(
-                            top_view, cv2.COLOR_BGR2GRAY)
-                        top_hand_mask = hand_mask[0:crop_h, :]
+                        top_hand_mask = hand_mask[:, 0:crop_w]
 
-            detected_rects = detect_cards(
-                top_view, hand_mask=None, debug=True)
+                        # detect_cards(card_ROI, hand_mask=top_hand_mask, debug=True)
+                        detected_rects = None
 
-            tracked_objects = tracker_manager.update(frame, detected_rects)
+            # tracker_manager.update(frame, detected_rects)
+            tracked_objects = {}
 
             if detected_rects is not None:
                 for box in detected_rects:
@@ -121,6 +168,8 @@ def main(save_video=False, save_path=''):
                 writer.write(overlay)
 
             cv2.imshow("Tracking", overlay)
+            cv2.imshow("Aligned view", mog_mask)
+            cv2.imshow("Aligned view2", mask)
 
             if cv2.waitKey(25) & 0xFF == 27:  # ESC to exit
                 break
