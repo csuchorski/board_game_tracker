@@ -217,6 +217,7 @@ __marimo__/
 
 # video files (too big to upload to version control)
 data/
+results/
 
 #vsc workspace
 *.code-workspace

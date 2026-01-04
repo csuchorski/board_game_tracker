@@ -9,10 +9,11 @@ from trackers.tracker_manager import TrackerManager
 from utils import extract_rotated_card
 
 
-def main():
+def main(save_video=False, save_path=''):
     SCALE = 0.75
 
-    cap = cv2.VideoCapture('data/easy1_start.mp4')
+    cap = cv2.VideoCapture(
+        'data/test_blue3.mp4')
     # cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
 
     board_img = cv2.imread('data/board_reference.jpg', 0)
@@ -33,6 +34,16 @@ def main():
     board_corners = None
     tracker_manager = TrackerManager(max_disappeared=10)
     frame_idx = 0
+
+    writer = None
+    if save_video:
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * SCALE)
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * SCALE)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        fourcc = cv2.VideoWriter.fourcc(*'mp4v')
+        writer = cv2.VideoWriter(save_path, fourcc, fps, (w, h))
+        print(f"Saving video to {save_path}...")
 
     try:
         while True:
@@ -107,6 +118,9 @@ def main():
             frame_idx += 1
             cv2.putText(overlay, f"Frame: {frame_idx}", (10, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
+
+            if writer is not None:
+                writer.write(overlay)
             cv2.imshow("Tracking", overlay)
 
             if cv2.waitKey(25) & 0xFF == 27:  # ESC to exit
@@ -116,8 +130,10 @@ def main():
         print(f"Error: {e}")
     finally:
         cap.release()
+        if writer is not None:
+            writer.release()
         cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    main()
+    main(save_video=True, save_path='results/ov_test_blue3.mp4')
