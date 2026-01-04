@@ -20,12 +20,15 @@ def detect_cards(frame_gray, hand_mask=None, debug=False):
 
     hand_discarded = []
     cards = []
+    print('___')
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area < 5000 or area > 100000:
+        if area < 5000 or area > 50000:
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
+        if w*h > 25000:
+            continue
         if hand_mask is not None:
             hand_roi = hand_mask[y:y+h, x:x+w]
 
@@ -41,6 +44,7 @@ def detect_cards(frame_gray, hand_mask=None, debug=False):
                 hand_discarded.append(cnt)
                 continue
         # rect = cv2.minAreaRect(cnt)
+
         # cards.append(rect)
         cards.append((x, y, w, h))
     if debug:

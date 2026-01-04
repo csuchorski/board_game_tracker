@@ -6,8 +6,8 @@ def get_hand_mask(frame, border_margin=10):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     h_img, w_img = frame.shape[:2]
 
-    lower_skin = np.array([0, 48, 80], dtype=np.uint8)
-    upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+    lower_skin = np.array([0, 0, 3], dtype=np.uint8)
+    upper_skin = np.array([40, 255, 255], dtype=np.uint8)
 
     mask = cv2.inRange(hsv, lower_skin, upper_skin)
 
