@@ -46,3 +46,27 @@ def extract_rotated_card(box, vid_frame):
     if box_width > box_height:
         warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
     return warped
+
+
+def get_aligned_frame(frame, H):
+    h_img, w_img = frame.shape[:2]
+    img_corners = np.float32(
+        [[0, 0], [w_img, 0], [w_img, h_img], [0, h_img]]).reshape(-1, 1, 2)
+
+    transformed_corners = cv2.perspectiveTransform(img_corners, H)
+
+    [x_min, y_min] = np.int32(transformed_corners.min(axis=0).ravel() - 0.5)
+    [x_max, y_max] = np.int32(transformed_corners.max(axis=0).ravel() + 0.5)
+
+    translation_dist = [-x_min, -y_min]
+    H_translation = np.array([[1, 0, translation_dist[0]],
+                              [0, 1, translation_dist[1]],
+                              [0, 0, 1]])
+
+    H_final = H_translation.dot(H)
+
+    output_width = x_max - x_min
+    output_height = y_max - y_min
+    table_view = cv2.warpPerspective(
+        frame, H_final, (output_width, output_height), borderValue=(255, 255, 255))
+    return table_view
