@@ -3,7 +3,7 @@ import numpy as np
 
 
 class TrackerManager:
-    def __init__(self, max_disappeared=5):
+    def __init__(self, max_disappeared=10):
         # Dictionary to store trackers: { object_id: tracker_instance }
         self.trackers = {}
         # Dictionary to store lost frames count: { object_id: count }
@@ -66,7 +66,7 @@ class TrackerManager:
                 # Find the tracker that overlaps most with this detection
                 for obj_id, track_box in current_tracked_boxes.items():
                     iou = self._calculate_iou(det_box, track_box)
-                    if iou > 0.5:
+                    if iou > 0.3:
                         if iou > best_iou:
                             best_iou = iou
                             best_match_id = obj_id
