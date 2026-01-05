@@ -20,9 +20,10 @@ def main(save_video=False, save_path=''):
     SCALE = 1.0
 
     cap = cv2.VideoCapture(
-        'data/color_test.mp4')
+        'data/new_top1.mp4')
     # cap.set(cv2.CAP_PROP_POS_FRAMES, 200)
-
+    ret, frame = cap.read()
+    frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
     board_img = cv2.imread('data/ref2.png', 0)
     if board_img is None:
         raise ValueError("error with board reference img")
@@ -69,11 +70,11 @@ def main(save_video=False, save_path=''):
 
     try:
         while True:
-            ret, frame = cap.read()
+            ret, frame = ret, frame  # cap.read()
             if not ret:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
-            frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
+            # frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
             overlay = frame.copy()
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -132,17 +133,31 @@ def main(save_video=False, save_path=''):
                 card_ROI = frame[:, :left_start]      # left region
                 trains_ROI = frame[:, right_start:]
 
+                # train color detection and masking
                 stack_contours, output_vis, edges = detect_train_stacks(
                     trains_ROI)
 
                 train_colors = [get_dominant_color(
                     trains_ROI, cnt) for cnt in stack_contours]
 
-                train_mask = get_train_mask(frame, train_colors)
+                # print(f"Number of colors:  {len(train_colors)}")
 
-                red_layer = np.zeros_like(overlay)
-                red_layer[:, :, 2] = train_mask
-                overlay = cv2.addWeighted(overlay, 1.0, red_layer, 1, 0)
+                # for i, color in enumerate(train_colors):
+                #     print(
+                #         f"Color {i}: H={color[0]}, S={color[1]}, V={color[2]}")
+
+                train_masks = []
+                for color in train_colors:
+                    train_masks.append(get_train_mask(frame, [color]))
+
+                for mask, color in zip(train_masks, train_colors):
+                    color_bgr_pixel = cv2.cvtColor(
+                        np.uint8([[color]]), cv2.COLOR_HSV2BGR)[0][0]
+                    overlay[mask == 255] = color_bgr_pixel
+
+                # red_layer = np.zeros_like(overlay)
+                # red_layer[:, :, 2] = train_mask
+                # overlay = cv2.addWeighted(overlay, 1.0, red_layer, 1, 0)
 
                 if card_ROI.size > 0:
                     # detect cards in the top_view
