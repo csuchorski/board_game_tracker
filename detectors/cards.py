@@ -13,7 +13,7 @@ def detect_cards(frame, hand_mask=None, debug=False):
         frame_blurred, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY_INV,
-        31, 20)
+        11, 10)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     frame_closed = cv2.morphologyEx(frame_thresh, cv2.MORPH_CLOSE, kernel)
