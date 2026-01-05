@@ -7,6 +7,7 @@ import config
 from detectors.board import detect_board
 from detectors.cards import detect_cards, classify_card
 from detectors.hand import get_hand_mask
+from detectors.trains import detect_train_stacks, get_dominant_color, get_train_mask
 from trackers.tracker_manager import TrackerManager
 from utils import extract_rotated_card, get_aligned_frame, opencv_autoexposure
 
@@ -19,8 +20,8 @@ def main(save_video=False, save_path=''):
     SCALE = 1.0
 
     cap = cv2.VideoCapture(
-        'data/test_blue5.mp4')
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 200)
+        'data/color_test.mp4')
+    # cap.set(cv2.CAP_PROP_POS_FRAMES, 200)
 
     board_img = cv2.imread('data/ref2.png', 0)
     if board_img is None:
@@ -31,8 +32,8 @@ def main(save_video=False, save_path=''):
     cv2.resizeWindow("Tracking", 900, 600)
     cv2.namedWindow("Aligned view", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Aligned view", 600, 900)
-    cv2.namedWindow("Aligned view2", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Aligned view2", 600, 900)
+    # cv2.namedWindow("Aligned view2", cv2.WINDOW_NORMAL)
+    # cv2.resizeWindow("Aligned view2", 600, 900)
     cv2.namedWindow("Controls", cv2.WINDOW_NORMAL)
     cv2.createTrackbar("H_min", "Controls", 0, 179, nothing)
     cv2.createTrackbar("H_max", "Controls", 50, 179, nothing)
@@ -40,6 +41,9 @@ def main(save_video=False, save_path=''):
     cv2.createTrackbar("S_max", "Controls", 150, 255, nothing)
     cv2.createTrackbar("V_min", "Controls", 60, 255, nothing)
     cv2.createTrackbar("V_max", "Controls", 255, 255, nothing)
+    cv2.createTrackbar("H_mar", "Controls", 15, 100, nothing)
+    cv2.createTrackbar("S_mar", "Controls", 50, 100, nothing)
+    cv2.createTrackbar("V_mar", "Controls", 50, 100, nothing)
     # cv2.namedWindow("Contours", cv2.WINDOW_NORMAL)
     # cv2.resizeWindow("Contours", 900, 600)
 
@@ -49,10 +53,8 @@ def main(save_video=False, save_path=''):
 
     board_corners = None
     tracker_manager = TrackerManager(max_disappeared=30)
-    backSub = cv2.createBackgroundSubtractorMOG2(
-        history=10, detectShadows=False)
     mog_mask = None
-
+    trains_ROI = np.zeros((600, 900))
     frame_idx = 0
 
     writer = None
@@ -69,16 +71,17 @@ def main(save_video=False, save_path=''):
         while True:
             ret, frame = cap.read()
             if not ret:
-                break
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
             frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
             overlay = frame.copy()
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # adding a semi-transparent tint to the detected hand
             hand_mask = get_hand_mask(frame)
-            red_layer = np.zeros_like(overlay)
-            red_layer[:, :, 2] = hand_mask
-            overlay = cv2.addWeighted(overlay, 1.0, red_layer, 0.5, 0)
+            # red_layer = np.zeros_like(overlay)
+            # red_layer[:, :, 2] = hand_mask
+            # overlay = cv2.addWeighted(overlay, 1.0, red_layer, 0.5, 0)
 
             # board detection, every 100 frames
             if frame_idx % 100 == 0:
@@ -88,8 +91,6 @@ def main(save_video=False, save_path=''):
                 if found_corners is not None:
                     board_corners = found_corners
                     H = H_board
-                    backSub = cv2.createBackgroundSubtractorMOG2(
-                        history=100, detectShadows=False)
                     # backsub = cv2.bgsegm.createBackgroundSubtractorGMG()
 
             detected_rects = None
@@ -103,42 +104,50 @@ def main(save_video=False, save_path=''):
 
                 board_view = cv2.warpPerspective(
                     frame, np.linalg.inv(H), (BOARD_H, BOARD_W))
-                mog_mask = backSub.apply(board_view, mog_mask, 0.005)
                 board_view_gray = cv2.cvtColor(
                     board_view, cv2.COLOR_BGR2GRAY)
                 # board_ref_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
-                diff = cv2.absdiff(board_img, board_view_gray)
+                # diff = cv2.absdiff(board_img, board_view_gray)
                 # _, mask = cv2.threshold(
                 #     diff, 90, 255, cv2.THRESH_BINARY)  # 30 can be tuned
-                mask = cv2.adaptiveThreshold(diff, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                             cv2.THRESH_BINARY, 11, 2)
-
-                # mask = cv2.medianBlur(mask, 5)
-                mask = cv2.GaussianBlur(mog_mask, (5, 5), 0)
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-
-                mask = cv2.morphologyEx(
-                    mask, cv2.MORPH_OPEN, kernel)
-
-                mask = cv2.morphologyEx(
-                    mask, cv2.MORPH_CLOSE, kernel)  # close gaps
 
                 # table_view = get_aligned_frame(frame, H)
 
                 # card roi stuff
                 flat_pts = pts.reshape(-1, 2)
-                min_x = np.min(flat_pts[:, 0])
+                x_coords = flat_pts[:, 0]
 
-                crop_w = int(max(0, min_x))
-                crop_w = min(crop_w, frame.shape[1])  # clamp to frame width
+                # Sort x-coordinates from left to right
+                x_coords_sorted = np.sort(x_coords)
 
-                card_ROI = frame[:, 0:crop_w]
+                # Second corner from each side
+                left_start = int(x_coords_sorted[1])   # second from left
+                right_start = int(x_coords_sorted[-2])  # second from right
+
+                # Clamp to image bounds
+                left_start = max(0, min(left_start, frame.shape[1]))
+                right_start = max(0, min(right_start, frame.shape[1]))
+
+                # Define ROIs
+                card_ROI = frame[:, :left_start]      # left region
+                trains_ROI = frame[:, right_start:]
+
+                stack_contours, output_vis, edges = detect_train_stacks(
+                    trains_ROI)
+
+                train_colors = [get_dominant_color(
+                    trains_ROI, cnt) for cnt in stack_contours]
+
+                train_mask = get_train_mask(frame, train_colors)
+
+                red_layer = np.zeros_like(overlay)
+                red_layer[:, :, 2] = train_mask
+                overlay = cv2.addWeighted(overlay, 1.0, red_layer, 1, 0)
 
                 if card_ROI.size > 0:
-
                     # detect cards in the top_view
                     if frame_idx % 7 == 0:
-                        top_hand_mask = hand_mask[:, 0:crop_w]
+                        # top_hand_mask = hand_mask[:, 0:min_x]
 
                         # detect_cards(card_ROI, hand_mask=top_hand_mask, debug=True)
                         detected_rects = None
@@ -168,8 +177,8 @@ def main(save_video=False, save_path=''):
                 writer.write(overlay)
 
             cv2.imshow("Tracking", overlay)
-            cv2.imshow("Aligned view", mog_mask)
-            cv2.imshow("Aligned view2", mask)
+            cv2.imshow("Aligned view", output_vis)
+            # cv2.imshow("Aligned view2", mask)
 
             if cv2.waitKey(25) & 0xFF == 27:  # ESC to exit
                 break
