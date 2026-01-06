@@ -48,11 +48,14 @@ class TrackerManager:
             if success:
                 current_tracked_boxes[obj_id] = tuple(map(int, box))
             else:
-                to_delete.append(obj_id)
+                # print(f"{obj_id} missing")
+                self.disappeared[obj_id] += 5
+
+                # to_delete.append(obj_id)
 
         # Remove failed trackers immediately
-        for obj_id in to_delete:
-            self.deregister(obj_id)
+        # for obj_id in to_delete:
+        #     self.deregister(obj_id)
 
         if detected_boxes is not None:
             # Mark all current trackers as potentially disappeared
@@ -72,8 +75,11 @@ class TrackerManager:
                             best_match_id = obj_id
 
                 if best_match_id != -1:  # found a match
+                    self.trackers[best_match_id] = self._create_tracker(
+                        frame, tuple(det_box))
                     matched_tracker_ids.add(best_match_id)
                     self.disappeared[best_match_id] = 0
+                    current_tracked_boxes[best_match_id] = tuple(det_box)
 
                 else:
                     # no match so we start a new tracker
@@ -82,6 +88,8 @@ class TrackerManager:
             # trackers that didnt match any new detection incrementation of the disappeared counter
             for obj_id in list(self.trackers.keys()):
                 if obj_id not in matched_tracker_ids:
+                    # print(f"{obj_id} no match")
+
                     self.disappeared[obj_id] += 1
                     if self.disappeared[obj_id] > self.max_disappeared:
                         self.deregister(obj_id)
