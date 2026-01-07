@@ -2,12 +2,11 @@ import cv2
 import numpy as np
 
 import config
-from detectors.board import detect_board_ctn, sort_box_corners
-from detectors.cards import detect_cards, classify_card
-from detectors.hand import get_hand_mask
+from detectors.board import detect_board_ctn
+from detectors.cards import detect_cards
 from detectors.trains import find_train_stacks, get_train_mask, validate_train_stacks
 from trackers.tracker_manager import TrackerManager
-from utils import boxes_to_points, draw_on_camera, draw_on_table_view, get_aligned_frame, map_boxes_to_frame
+from utils import draw_on_table_view, get_aligned_frame
 
 
 def nothing(x):
@@ -18,7 +17,7 @@ def main(save_video=False, save_path=''):
     SCALE = 1.0
 
     cap = cv2.VideoCapture(
-        'data/MID_3.mp4')
+        'data/HARD_3.mp4')
     # cap.set(cv2.CAP_PROP_POS_FRAMES, 200)
     # ret, frame = cap.read()
     # frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
@@ -35,7 +34,8 @@ def main(save_video=False, save_path=''):
     last_board_area = None
     prev_stacks = [None, None]
     train_stacks = None
-    table_view = np.zeros((900, 600))
+    table_view = np.zeros((600, 900, 3), dtype=np.uint8)
+    board_view = np.zeros((600, 900, 3), dtype=np.uint8)
     cv2.namedWindow("Tracking", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Tracking", 600, 900)
     cv2.namedWindow("Aligned view", cv2.WINDOW_NORMAL)
@@ -50,8 +50,8 @@ def main(save_video=False, save_path=''):
     cv2.createTrackbar("V_min", "Controls", 60, 255, nothing)
     cv2.createTrackbar("V_max", "Controls", 255, 255, nothing)
     cv2.createTrackbar("H_mar", "Controls", 15, 100, nothing)
-    cv2.createTrackbar("S_mar", "Controls", 75, 100, nothing)
-    cv2.createTrackbar("V_mar", "Controls", 60, 100, nothing)
+    cv2.createTrackbar("S_mar", "Controls", 60, 100, nothing)
+    cv2.createTrackbar("V_mar", "Controls", 65, 100, nothing)
     cv2.namedWindow("Contours", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Contours", 600, 900)
 
@@ -61,18 +61,17 @@ def main(save_video=False, save_path=''):
 
     board_corners = None
     tracker_manager = TrackerManager(max_disappeared=15)
-    trains_ROI = np.zeros((600, 900))
+    trains_ROI = np.zeros((600, 900, 3), dtype=np.uint8)
     frame_idx = 0
 
     writer = None
+    save_w, save_h = int(BOARD_H * 0.5), int(BOARD_W * 0.5)
     if save_video:
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) * SCALE)
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) * SCALE)
         fps = cap.get(cv2.CAP_PROP_FPS)
-
         fourcc = cv2.VideoWriter.fourcc(*'mp4v')
-        writer = cv2.VideoWriter(save_path, fourcc, fps, (w, h))
-        print(f"Saving video to {save_path}...")
+        # width = 3 frames stacked horizontally
+        writer = cv2.VideoWriter(save_path, fourcc, fps, (save_w*3, save_h))
+        print(f"Saving video to {save_path} at size {save_w*3}x{save_h}")
 
     try:
         while True:
@@ -81,7 +80,7 @@ def main(save_video=False, save_path=''):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 break
             # frame = cv2.rotate(frame, cv2.)
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             frame = cv2.resize(frame, (0, 0), fx=SCALE, fy=SCALE)
             overlay = frame.copy()
 
@@ -135,7 +134,7 @@ def main(save_video=False, save_path=''):
 
                 # train color detection and masking
                 # Detect trains in the lower ROI
-                stack_candidates = find_train_stacks(trains_ROI, debug=True)
+                stack_candidates = find_train_stacks(trains_ROI, debug=False)
 
                 stacks_valid = validate_train_stacks(
                     stack_candidates, prev_stacks, trains_ROI, bottom_offset=y_max
@@ -152,11 +151,10 @@ def main(save_video=False, save_path=''):
 
                     train_masks = [get_train_mask(
                         board_view, [s['color']]) for s in train_stacks]
-                    for mask in train_masks:
+                    for mask, stack in zip(train_masks, train_stacks):
                         board_view[mask == 255] = (255, 255, 255)
-
                         # cv2.cvtColor(
-                        #     np.uint8([[color]]), cv2.COLOR_HSV2BGR)[0][0]
+                        #     np.uint8([[stack['color']]]), cv2.COLOR_HSV2BGR)[0][0]
 
                 cv2.imshow("Board view", board_view)
 
@@ -166,7 +164,7 @@ def main(save_video=False, save_path=''):
                         # top_hand_mask = hand_mask[:, 0:min_x]
 
                         detected_rects = detect_cards(
-                            card_ROI, hand_mask=None, debug=False)
+                            card_ROI,  debug=True)
 
                 # Update tracker in table_view
                 tracked_objects = tracker_manager.update(
@@ -175,18 +173,34 @@ def main(save_video=False, save_path=''):
                 # Draw both views
                 table_view = draw_on_table_view(
                     table_view, detected_rects, tracked_objects, board_corners_table, train_stacks)
-                overlay = draw_on_camera(
-                    overlay, detected_rects, tracked_objects, train_stacks, H_final)
+                overlay = cv2.warpPerspective(
+                    table_view, H_final, (overlay.shape[1], overlay.shape[0]),
+                    flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_TRANSPARENT
+                )
+                # overlay = draw_on_camera(
+                #     overlay, detected_rects, tracked_objects, train_stacks, H_final)
 
             frame_idx += 1
             cv2.putText(overlay, f"Frame: {frame_idx}", (10, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
+            if hasattr(tracker_manager, 'last_event_msg'):
+                cv2.putText(overlay, tracker_manager.last_event_msg, (10, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
+            overlay_resized = cv2.resize(overlay, (save_w, save_h))
+            table_resized = cv2.resize(table_view, (save_w, save_h))
+            board_resized = cv2.resize(
+                cv2.rotate(board_view, cv2.ROTATE_90_CLOCKWISE), (save_w, save_h))
+            combined_frame = np.hstack(
+                [overlay_resized, table_resized, board_resized])
             if 'writer' in locals() and writer is not None:
-                writer.write(overlay)
+
+                writer.write(combined_frame)
 
             cv2.imshow("Tracking", overlay)
             cv2.imshow("Aligned view", table_view)
+            cv2.imshow("Combined", combined_frame)
 
             if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
                 break
@@ -203,4 +217,4 @@ def main(save_video=False, save_path=''):
 
 
 if __name__ == "__main__":
-    main(save_video=False, save_path='results/ov_test_blue3.mp4')
+    main(save_video=False, save_path='results/HARD_3_RES.mp4')

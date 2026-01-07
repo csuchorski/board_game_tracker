@@ -129,41 +129,31 @@ def draw_on_table_view(table_view, detected_rects, tracked_objects, board_corner
             cv2.rectangle(table_overlay, (x, y), (x+w, y+h), (0, 0, 255), 2)
 
     if tracked_objects is not None:
-        for box in tracked_objects.values():
+        obj_ids = list(tracked_objects.keys())
+        boxes = list(tracked_objects.values())
+
+        sorted_indices = sorted(range(len(boxes)), key=lambda i: boxes[i][0])
+        leftmost_ids = {obj_ids[i] for i in sorted_indices[:2]}
+
+        for obj_id, box in zip(obj_ids, boxes):
             x, y, w, h = box
             cv2.rectangle(table_overlay, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            # Label
+            if obj_id in leftmost_ids:
+                text = "Card deck"
+            else:
+                text = f"ID: {obj_id}"
+            cv2.putText(table_overlay, text, (x, y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     if train_stacks is not None:
         for s in train_stacks:
             cnt = s['cnt'].copy()
             cv2.drawContours(table_overlay, [cnt], -1, (255, 0, 255), 3)
 
+            center = s['center'].copy()
+            text_pos = (int(center[0]), int(center[1] - 30))
+            cv2.putText(table_overlay, "Train stack", text_pos,
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 3)
+
     return table_overlay
-
-
-def draw_on_camera(overlay, detected_rects, tracked_objects, train_stacks, H_final):
-    H_inv = np.linalg.inv(H_final)
-
-    if detected_rects is not None:
-        boxes_cam = map_boxes_to_frame(detected_rects, H_inv)
-        for box in boxes_cam:
-            x, y, w, h = box
-            cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, 0, 255), 2)
-
-    if tracked_objects is not None:
-        boxes_cam = map_boxes_to_frame(list(tracked_objects.values()), H_inv)
-        for obj_id, box in zip(tracked_objects.keys(), boxes_cam):
-            x, y, w, h = box
-            cv2.rectangle(overlay, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(overlay, f"ID: {obj_id}", (x, y-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-    if train_stacks is not None:
-        for s in train_stacks:
-            cnt = s['cnt'].copy()
-            cnt_cam = cv2.perspectiveTransform(
-                cnt.astype(np.float32).reshape(-1, 1, 2), H_inv)
-            cv2.drawContours(
-                overlay, [cnt_cam.astype(np.int32)], -1, (255, 0, 255), 3)
-
-    return overlay
