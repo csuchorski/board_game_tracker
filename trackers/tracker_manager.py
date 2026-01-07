@@ -13,7 +13,6 @@ class TrackerManager:
         self.max_disappeared = max_disappeared  # How many frames to keep a lost object
 
     def _create_tracker(self, frame, bbox):
-        """Helper to initialize a single tracker"""
         tracker = cv2.legacy.TrackerCSRT.create()
         tracker.init(frame, bbox)
         return tracker
@@ -33,11 +32,6 @@ class TrackerManager:
         return iou
 
     def update(self, frame, detected_boxes=None):
-        """
-        frame: current video frame
-        detected_boxes: list of (x, y, w, h) from your detect_cards function. 
-                        Can be None if detection didn't run this frame.
-        """
         active_ids = list(self.trackers.keys())
         current_tracked_boxes = {}
 
@@ -58,8 +52,6 @@ class TrackerManager:
         #     self.deregister(obj_id)
 
         if detected_boxes is not None:
-            # Mark all current trackers as potentially disappeared
-            # We will unmark them if we match them to a detection
             matched_tracker_ids = set()
 
             for det_box in detected_boxes:
@@ -98,11 +90,14 @@ class TrackerManager:
 
     def register(self, frame, bbox):
         print(f"Registered new object ID: {self.next_object_id}")
+        if self.next_object_id > 1:
+            self.last_event_msg = f"Card ID {self.next_object_id} has been drawn"
         self.trackers[self.next_object_id] = self._create_tracker(frame, bbox)
         self.disappeared[self.next_object_id] = 0
         self.next_object_id += 1
 
     def deregister(self, obj_id):
         print(f"Deregistered object ID: {obj_id}")
+        self.last_event_msg = f"Card ID {obj_id} has been taken off the board"
         del self.trackers[obj_id]
         del self.disappeared[obj_id]

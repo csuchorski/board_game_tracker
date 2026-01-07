@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+# this is a leftover file from one of my previous approaches which was based on detecting
+# the hand to safeguard the pipeline from making wrong detections because of the hand's disruption
 
 
 def get_hand_mask(frame, border_margin=10):
